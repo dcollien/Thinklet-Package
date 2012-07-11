@@ -4,21 +4,34 @@
 #define TRUE 1
 #define FALSE 0
 
+#define LOOP_FLAG 1
 #ifndef PROGMEM
 #define PROGMEM
 #endif
 
+uint8_t waitTime;
+
 uint8_t channelData[] PROGMEM = {
-	1, // Number of waveforms
+	20, // waiting time (us)
+	2, // Number of waveforms
 
 	// waveform:
 	0, 10, // length, high low
+	1, // flags (to loop or not)
 	// waypoints:
 	0, 12,
 	10, 10,
 	15, 0,
 	0, 15,
-	255, 1
+	255, 1,
+
+	// waveform 1:
+	0, 6, // length
+	0, // flags
+	// waypoints:
+	5, 12,
+	255, 10,
+	0, 20
 };
 
 
@@ -26,7 +39,9 @@ typedef struct channelLerp {
 	uint8_t id;
 
 	uint8_t dx, dy;
-	int8_t sx, sy;
+	//int8_t sx;
+	
+	int8_t sy;
 
 	uint8_t x0, x1;
 	uint8_t y0, y1;
@@ -43,6 +58,8 @@ typedef struct channelLerp {
 
 	uint16_t waveIndex;
 
+	uint8_t flags;
+
 	uint16_t length;
 	uint8_t *wave;
 
@@ -50,12 +67,13 @@ typedef struct channelLerp {
 
 
 void brenthamInit( channelLerp_t *channel ) {
+
 	if ( channel->x0 < channel->x1 ) {
 		channel->dx = channel->x1 - channel->x0;
-		channel->sx = 1;
+		//channel->sx = 1;
 	} else {
 		channel->dx = channel->x0 - channel->x1;
-		channel->sx = -1;
+		//channel->sx = -1;
 	}
 
 	if ( channel->y0 < channel->y1 ) {
@@ -74,7 +92,7 @@ void brenthamIteration( channelLerp_t *channel ) {
 
 	if ( e2 > -channel->dy ) {
 		channel->err -= channel->dy;
-		channel->x0 += channel->sx;
+		channel->x0 += 1;//channel->sx;
 	}
 
 	if ( e2 < channel->dx ) {
@@ -84,11 +102,11 @@ void brenthamIteration( channelLerp_t *channel ) {
 }
 
 void channelOut( channelLerp_t *channel ) {
-	printf( "channel: %d -> %d\n", channel->id, channel->result );
+	printf( "channel %d set to: %d\n", channel->id, channel->result );
 }
 
 void wait( ) {
-	printf( "wait\n" );
+	printf( "wait %d\n", waitTime );
 }
 
 void startChannelLerp( channelLerp_t *channel ) {
@@ -140,6 +158,13 @@ uint8_t lerpStepChannel( channelLerp_t *channel ) {
 
 
 uint8_t stepChannel( channelLerp_t *channel ) {
+
+	if ( channel->flags & LOOP_FLAG && channel->waveIndex >= channel->length ) {
+		// reset on looping
+		channel->waveIndex = 0;
+		startChannelLerp( channel );
+	}
+
 	if ( channel->waveIndex < channel->length ) {
 		// still have more waypoints to interpolate over
 
@@ -171,25 +196,25 @@ uint8_t stepAllChannels( channelLerp_t *channels, uint8_t numChannels ) {
 
 
 int main( int argc, char *argv[] ) {
-	uint8_t numChannels = channelData[0];
+	uint8_t numChannels = channelData[1];
 	uint8_t i;
 	uint16_t offset;
 
 	uint8_t debug_i;
 
-
+	waitTime = channelData[0];
 	printf( "Number of channels: %d\n", numChannels );
 
 	channelLerp_t channels[numChannels];
 
-	offset = 1;
+	offset = 2;
 	for ( i = 0; i < numChannels; i++ ) {
 		channels[i].id = i;
 		channels[i].length = (channelData[offset] << 8) | channelData[offset+1];
 		channels[i].waveIndex = 0;
-		channels[i].wave = &(channelData[offset+2]);
-
-		offset += channels[i].length + 2;
+		channels[i].flags = channelData[offset+2];
+		channels[i].wave = &(channelData[offset+3]);
+		offset += channels[i].length + 3;
 
 
 		printf( "Waveform %d\n", i );

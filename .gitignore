@@ -1,1 +1,9 @@
 .DS_Store
+
+DemoFirmware/firmware/main.hex
+
+DemoFirmware/firmware/main.elf
+
+DemoFirmware/firmware/main.o
+
+DemoFirmware/firmware/testLerp
