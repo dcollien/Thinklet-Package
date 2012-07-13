@@ -12,6 +12,14 @@
 
 #define LOOP_FLAG 1
 
+/*
+#define WAVEFORM_STORAGE_SIZE 0
+
+uint8_t channelData[WAVEFORM_STORAGE_SIZE] PROGMEM = {
+
+};
+*/
+
 // Example Data
 uint8_t channelData[] PROGMEM = {
 	20, // waiting time (us)
@@ -37,45 +45,103 @@ uint8_t channelData[] PROGMEM = {
 };
 
 
-typedef struct channelLerp {
+/*
+ * Interpolation and waveform functions
+ */
+
+typedef struct channelData {
+	// id/index for this channel
 	uint8_t id;
 
+	// the x (time) and y (brightness) distances
+	// of the current interpolation
 	uint8_t dx, dy;
-	//int8_t sx;
+
 	
+	// the sign (direction) of the
+	// interpolation slope
+	//int8_t sx; // time only goes in one direction
 	int8_t sy;
 
+	// x (time) and y (brightness) coordinates
+	// of the line (x0, y0), (x1, y1) that is
+	// yet to be interpolated
 	uint8_t x0, x1;
 	uint8_t y0, y1;
 	
+	// an error measure for drawing the
+	// interpolated line
 	int16_t err;
 
+	// the x and y value at the beginning
+	// of the interpolation
 	uint8_t x_prev;
 	uint8_t y_prev;
 
+	// the current output result (brightness)
+	// of this channel
 	uint8_t result;
 
+	// flag for whether the interpolation
+	// has completed
 	uint8_t done;
+
+	// flag for whether we're at the start of
+	// the interpolation
 	uint8_t first;
 
+	// the current index of the waveform lookup
 	uint16_t waveIndex;
 
+	// flags, e.g. looping
 	uint8_t flags;
 
+	// length of the whole waveform
 	uint16_t length;
+
+	// program memory where the waveform is stored
 	uint8_t *wave;
 
-} channelLerp_t;
+} channelData_t;
 
-void channelOut( channelLerp_t *channel );
 
-void brenthamInit( channelLerp_t *channel ) {
+
+// output the current value of the channel
+void channelOut( channelData_t *channel );
+
+// brentham's line algorithm for 
+// discrete linear interpolation
+void brenthamInit( channelData_t *channel );
+void brenthamIteration( channelData_t *channel );
+
+// start interpolating a channel, and move to the next waypoint
+void startChannelInterpolation( channelData_t *channel );
+
+// move along an interpolation line until
+// the next timestep is reached
+uint8_t interpolateChannel( channelData_t *channel );
+
+// do an interpolation step on a channel,
+// taking into account moving on to the next waypoint
+uint8_t stepChannel( channelData_t *channel );
+
+// do an interpolation step over all channels
+uint8_t stepAllChannels( channelData_t *channels, uint8_t numChannels );
+
+// run the waveforming loop until all waveforms have finished
+// (or forever, if one loops)
+void startWaveforming( void );
+
+
+
+
+void brenthamInit( channelData_t *channel ) {
 	// initialise a channel to start a new interpolation
 	// using brentham's algorithm
 
 	if ( channel->x0 < channel->x1 ) {
 		channel->dx = channel->x1 - channel->x0;
-		//channel->sx = 1;
+		//channel->sx = 1; // our lines only go left to right
 	} else {
 		channel->dx = channel->x0 - channel->x1;
 		//channel->sx = -1;
@@ -83,16 +149,16 @@ void brenthamInit( channelLerp_t *channel ) {
 
 	if ( channel->y0 < channel->y1 ) {
 		channel->dy = channel->y1 - channel->y0;
-		channel->sy = 1;
+		channel->sy = 1; // going up
 	} else {
 		channel->dy = channel->y0 - channel->y1;
-		channel->sy = -1;
+		channel->sy = -1; // going down
 	}
 
 	channel->err = channel->dx - channel->dy;
 }
 
-void brenthamIteration( channelLerp_t *channel ) {
+void brenthamIteration( channelData_t *channel ) {
 	// perform an iteration of brentham's line algorithm
 
 	int16_t e2 = channel->err << 1;
@@ -108,12 +174,16 @@ void brenthamIteration( channelLerp_t *channel ) {
 	}
 }
 
-void startChannelLerp( channelLerp_t *channel ) {
+void startChannelInterpolation( channelData_t *channel ) {
 	// load the next interpolation's
 	// start, end and duration from program memory
 
 	uint8_t index = channel->waveIndex;
 
+	// look up the next waveform coordinates:
+	//   - brightness start
+	//   - time to interpolate for
+	//   - brightness target
 	channel->x0 = 0;
 	channel->y0 = pgm_read_byte(&channel->wave[index]);
 
@@ -127,6 +197,7 @@ void startChannelLerp( channelLerp_t *channel ) {
 	channel->first = TRUE;
 
 	// skip over the values already loaded into the interpolation
+	// to make the brightness target the next starting brightness
 	channel->waveIndex = index + 2;
 
 	// reset the 'done' flag
@@ -134,7 +205,7 @@ void startChannelLerp( channelLerp_t *channel ) {
 }
 
 
-uint8_t lerpStepChannel( channelLerp_t *channel ) {
+uint8_t interpolateChannel( channelData_t *channel ) {
 	// step the interpolation of a single channel
 
 	// save the previous x and y
@@ -173,14 +244,14 @@ uint8_t lerpStepChannel( channelLerp_t *channel ) {
 }
 
 
-uint8_t stepChannel( channelLerp_t *channel ) {
+uint8_t stepChannel( channelData_t *channel ) {
 	// step the interpolation of a channel until a result is found
 
 	if ( channel->flags & LOOP_FLAG && channel->waveIndex >= channel->length ) {
 		// reset the waveform if it's flagged as looping
 
 		channel->waveIndex = 0;
-		startChannelLerp( channel );
+		startChannelInterpolation( channel );
 	}
 
 
@@ -188,9 +259,9 @@ uint8_t stepChannel( channelLerp_t *channel ) {
 		// still have more waypoints to interpolate over
 
 		// move along the interpolation line by one step
-		while ( !lerpStepChannel( channel ) ) {
+		while ( !interpolateChannel( channel ) ) {
 			// move on to next waypoint until one step is made
-			startChannelLerp( channel );
+			startChannelInterpolation( channel );
 		}
 
 		// possibly still more waypoints
@@ -202,12 +273,14 @@ uint8_t stepChannel( channelLerp_t *channel ) {
 	}
 }
 
-uint8_t stepAllChannels( channelLerp_t *channels, uint8_t numChannels ) {
+uint8_t stepAllChannels( channelData_t *channels, uint8_t numChannels ) {
 	uint8_t i;
 	uint8_t numFinished;
 
 	numFinished = 0;
 	for ( i = 0; i < numChannels; i++ ) {
+		// count how many channels have finished stepping
+		// through their waveforms
 		numFinished += stepChannel( &channels[i] );
 	}
 
@@ -215,15 +288,20 @@ uint8_t stepAllChannels( channelLerp_t *channels, uint8_t numChannels ) {
 }
 
 
+// store the number of channels being used globally
+// so the timer interrupt can access it
+global uint8_t numChannels;
+
 void start_waveforming( void ) {
 	uint8_t i;
 	uint16_t offset;
 
 	// first two values in the waveform data
 	uint8_t waitTime = pgm_read_byte(&channelData[0]);
-	uint8_t numChannels = pgm_read_byte(&channelData[1]);
+	
+	numChannels = pgm_read_byte(&channelData[1]);
 
-	channelLerp_t channels[numChannels];
+	channelData_t channels[numChannels];
 
 	// already read two values
 	offset = 2;
@@ -231,15 +309,19 @@ void start_waveforming( void ) {
 		channels[i].id = i;
 		channels[i].waveIndex = 0;
 
+		// high byte
 		channels[i].length = (pgm_read_byte(&channelData[offset]) << 8);
+		// low byte
 		channels[i].length |= pgm_read_byte(&channelData[offset+1]);
+
+		// flags (e.g. looping)
 		channels[i].flags  =  pgm_read_byte(&channelData[offset+2]);
 
 		// program memory pointer
 		channels[i].wave = &(channelData[offset+3]);
 
 		// initialise this waveform's channel
-		startChannelLerp( &channels[i] );
+		startChannelInterpolation( &channels[i] );
 
 		// skip over the 3 values read, and the length of the waveform
 		offset += channels[i].length + 3;
@@ -247,6 +329,8 @@ void start_waveforming( void ) {
 
 	// each iteration of the waveforming
 	while ( !stepAllChannels( channels, numChannels ) ) {
+		// still more steps to go, for all waveforms
+
 		// wait the time resolution between updates
 		wait_us( waitTime );
 	}
@@ -255,10 +339,10 @@ void start_waveforming( void ) {
 
 
 /* 
- * PWM and pin setup
+ * PWM, gamma correction and pin setup functions
  */
 
-#define NUM_CHANNELS 6
+#define MAX_CHANNELS 6
 
 #define CHANNEL_PIN_0 PB0
 #define CHANNEL_PIN_1 PB1
@@ -267,9 +351,9 @@ void start_waveforming( void ) {
 #define CHANNEL_PIN_4 PB4
 #define CHANNEL_PIN_5 PB5
 
-#define PWM_WINDOW 255
 #define BRIGHTNESS_LIMIT 256
 
+// Gamma correction lookup table
 uint8_t gammaTable[BRIGHTNESS_LIMIT] PROGMEM = {
 	  0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
 	  1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,
@@ -289,7 +373,8 @@ uint8_t gammaTable[BRIGHTNESS_LIMIT] PROGMEM = {
 	220, 222, 224, 227, 229, 231, 234, 236, 238, 241, 243, 246, 248, 251, 253, 255
 };
 
-const uint8_t channelPins[NUM_CHANNELS] = {
+// channel id to pin lookup
+const uint8_t channelPins[MAX_CHANNELS] = {
 	CHANNEL_PIN_0,
 	CHANNEL_PIN_1,
 	CHANNEL_PIN_2,
@@ -298,11 +383,17 @@ const uint8_t channelPins[NUM_CHANNELS] = {
 	CHANNEL_PIN_5
 };
 
-global uint8_t channelValues[NUM_CHANNELS] = {0, 0, 0, 0, 0, 0};
+// channel brightnesses
+global uint8_t channelValues[MAX_CHANNELS] = {0, 0, 0, 0, 0, 0};
 
-void channelOut( channelLerp_t *channel ) {
+// save the current channel value to the output array
+void channelOut( channelData_t *channel ) {
 	channelValues[channel->id]	= channel->result;
 }
+
+/*
+ * Built-in Macros
+ */
 
 setup( ) {
 	/*
@@ -312,33 +403,47 @@ setup( ) {
 	make_output_pin( CHANNEL_PIN_3 );
 	make_output_pin( CHANNEL_PIN_4 );
 	make_output_pin( CHANNEL_PIN_5 );
+	// equivalent to DDRB = 0xff;
 	*/
-	DDRB = 0xff;
-	
+	DDRB = 0xff; // set everything to be an output
+
+	// run the internal timer interrupt as fast as it can
 	setup_timer( TIMER_Clock );
 	
+	// start interrupting
 	start_interrupts( );
 
+	// run the waveforming loop
 	start_waveforming( );
 }
 
 on_timer( ) {
+	// each timer interrupt, update PWM for each channel
+
+	// where in the duty cycle we're up to
 	static uint8_t windowCounter = 0;
 	
 	uint8_t i;
 
-	for ( i = 0; i < NUM_CHANNELS; i++ ) {
+	// turn each channel on or off according to PWM
+	for ( i = 0; i < numChannels; i++ ) {
+
+		// compare against a gamma corrected brightness (via lookup table)
 		if ( windowCounter >= pgm_read_byte(gammaTable + channelValues[i]) ) {
+			// turn pin off when the duty cycle timing is past the brightness
 			pin_off( channelPins[i] );
 		} else {
+			// turn the pin on for a duration proportional to the brightness
 			pin_on( channelPins[i] );
-		}		
+		}
+
 	}
 
-	windowCounter = (windowCounter + 1) % PWM_WINDOW;
+	windowCounter = (windowCounter + 1) % BRIGHTNESS_LIMIT;
 }
 
 loop( ) {
+	// shut down microcontroller when finished
 	sleep( );
 }
 
