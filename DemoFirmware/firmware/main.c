@@ -67,9 +67,9 @@ typedef struct channelLerp {
 
 } channelLerp_t;
 
-static inline void channelOut( channelLerp_t *channel );
+void channelOut( channelLerp_t *channel );
 
-static inline void brenthamInit( channelLerp_t *channel ) {
+void brenthamInit( channelLerp_t *channel ) {
 	// initialise a channel to start a new interpolation
 	// using brentham's algorithm
 
@@ -92,7 +92,7 @@ static inline void brenthamInit( channelLerp_t *channel ) {
 	channel->err = channel->dx - channel->dy;
 }
 
-static inline void brenthamIteration( channelLerp_t *channel ) {
+void brenthamIteration( channelLerp_t *channel ) {
 	// perform an iteration of brentham's line algorithm
 
 	int16_t e2 = channel->err << 1;
@@ -112,11 +112,13 @@ void startChannelLerp( channelLerp_t *channel ) {
 	// load the next interpolation's
 	// start, end and duration from program memory
 
-	channel->x0 = 0;
-	channel->y0 = pgm_read_byte(&channel->wave[channel->waveIndex]);
+	uint8_t index = channel->waveIndex;
 
-	channel->x1 = pgm_read_byte(&channel->wave[channel->waveIndex+1]);
-	channel->y1 = pgm_read_byte(&channel->wave[channel->waveIndex+2]);
+	channel->x0 = 0;
+	channel->y0 = pgm_read_byte(&channel->wave[index]);
+
+	channel->x1 = pgm_read_byte(&channel->wave[index+1]);
+	channel->y1 = pgm_read_byte(&channel->wave[index+2]);
 
 	// initialise the new interpolation
 	brenthamInit( channel );
@@ -125,7 +127,7 @@ void startChannelLerp( channelLerp_t *channel ) {
 	channel->first = TRUE;
 
 	// skip over the values already loaded into the interpolation
-	channel->waveIndex += 2;
+	channel->waveIndex = index + 2;
 
 	// reset the 'done' flag
 	channel->done = FALSE;
@@ -269,22 +271,22 @@ void start_waveforming( void ) {
 #define BRIGHTNESS_LIMIT 256
 
 uint8_t gammaTable[BRIGHTNESS_LIMIT] PROGMEM = {
-	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,
-	  1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   3,   3,   3,   3,
-	  3,   4,   4,   4,   4,   5,   5,   5,   5,   6,   6,   6,   6,   7,   7,   7,
-	  8,   8,   8,   9,   9,   9,  10,  10,  10,  11,  11,  11,  12,  12,  13,  13,
-	 14,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20,  21,  21,
-	 22,  22,  23,  23,  24,  25,  25,  26,  27,  27,  28,  29,  29,  30,  31,  31,
-	 32,  33,  34,  34,  35,  36,  37,  37,  38,  39,  40,  41,  42,  42,  43,  44,
-	 45,  46,  47,  48,  49,  50,  51,  52,  52,  53,  54,  55,  56,  57,  59,  60,
-	 61,  62,  63,  64,  65,  66,  67,  68,  69,  71,  72,  73,  74,  75,  77,  78,
-	 79,  80,  82,  83,  84,  85,  87,  88,  89,  91,  92,  93,  95,  96,  98,  99,
-	100, 102, 103, 105, 106, 108, 109, 111, 112, 114, 115, 117, 119, 120, 122, 123,
-	125, 127, 128, 130, 132, 133, 135, 137, 138, 140, 142, 144, 145, 147, 149, 151,
-	153, 155, 156, 158, 160, 162, 164, 166, 168, 170, 172, 174, 176, 178, 180, 182,
-	184, 186, 188, 190, 192, 194, 197, 199, 201, 203, 205, 207, 210, 212, 214, 216,
-	219, 221, 223, 226, 228, 230, 233, 235, 237, 240, 242, 245, 247, 250, 252, 255
+	  0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+	  1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,
+	  2,   2,   2,   2,   2,   3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,
+	  4,   5,   5,   5,   5,   6,   6,   6,   6,   7,   7,   7,   7,   8,   8,   8,
+	  9,   9,   9,  10,  10,  10,  11,  11,  11,  12,  12,  12,  13,  13,  14,  14,
+	 15,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20,  20,  21,  22,  22,
+	 23,  23,  24,  24,  25,  26,  26,  27,  28,  28,  29,  30,  30,  31,  32,  32,
+	 33,  34,  35,  35,  36,  37,  38,  38,  39,  40,  41,  42,  43,  43,  44,  45,
+	 46,  47,  48,  49,  50,  51,  52,  53,  53,  54,  55,  56,  57,  58,  60,  61,
+	 62,  63,  64,  65,  66,  67,  68,  69,  70,  72,  73,  74,  75,  76,  78,  79,
+	 80,  81,  83,  84,  85,  86,  88,  89,  90,  92,  93,  94,  96,  97,  99, 100,
+	101, 103, 104, 106, 107, 109, 110, 112, 113, 115, 116, 118, 120, 121, 123, 124,
+	126, 128, 129, 131, 133, 134, 136, 138, 139, 141, 143, 145, 146, 148, 150, 152,
+	154, 156, 157, 159, 161, 163, 165, 167, 169, 171, 173, 175, 177, 179, 181, 183,
+	185, 187, 189, 191, 193, 195, 198, 200, 202, 204, 206, 208, 211, 213, 215, 217,
+	220, 222, 224, 227, 229, 231, 234, 236, 238, 241, 243, 246, 248, 251, 253, 255
 };
 
 const uint8_t channelPins[NUM_CHANNELS] = {
@@ -298,17 +300,20 @@ const uint8_t channelPins[NUM_CHANNELS] = {
 
 global uint8_t channelValues[NUM_CHANNELS] = {0, 0, 0, 0, 0, 0};
 
-static inline void channelOut( channelLerp_t *channel ) {
+void channelOut( channelLerp_t *channel ) {
 	channelValues[channel->id]	= channel->result;
 }
 
 setup( ) {
+	/*
 	make_output_pin( CHANNEL_PIN_0 );
 	make_output_pin( CHANNEL_PIN_1 );
 	make_output_pin( CHANNEL_PIN_2 );
 	make_output_pin( CHANNEL_PIN_3 );
 	make_output_pin( CHANNEL_PIN_4 );
 	make_output_pin( CHANNEL_PIN_5 );
+	*/
+	DDRB = 0xff;
 	
 	setup_timer( TIMER_Clock );
 	
