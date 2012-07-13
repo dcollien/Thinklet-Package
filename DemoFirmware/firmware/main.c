@@ -60,7 +60,7 @@ typedef struct channelData {
 	
 	// the sign (direction) of the
 	// interpolation slope
-	//int8_t sx; // time only goes in one direction
+	//int8_t sx; // not needed: time only goes in one direction
 	int8_t sy;
 
 	// x (time) and y (brightness) coordinates
@@ -288,11 +288,11 @@ uint8_t stepAllChannels( channelData_t *channels, uint8_t numChannels ) {
 }
 
 
-// store the number of channels being used globally
+// globally store the number of channels being used
 // so the timer interrupt can access it
 global uint8_t numChannels;
 
-void start_waveforming( void ) {
+void startWaveforming( void ) {
 	uint8_t i;
 	uint16_t offset;
 
@@ -406,15 +406,15 @@ setup( ) {
 	// equivalent to DDRB = 0xff;
 	*/
 	DDRB = 0xff; // set everything to be an output
-
+	
 	// run the internal timer interrupt as fast as it can
 	setup_timer( TIMER_Clock );
 	
 	// start interrupting
 	start_interrupts( );
-
+	
 	// run the waveforming loop
-	start_waveforming( );
+	startWaveforming( );
 }
 
 on_timer( ) {
